@@ -1,0 +1,87 @@
+rsyncshot is a script for creating rotating backups based on rsync and hard-links. The script utilizes following logic:
+There is a "job" defined by job name, which can consist of one or more backups (backup is a combination of backup source and backup destination). Each job then creates rotating backups on hourly, daily, weekly and monthly basis, as defined by respective parameters.
+
+Options to the script can be supplied via command line or via a config file. If you supply config file as well as command line options, the command line overrides the config file on options which are specified in both. Exception to this are input/output directives and "backup" directive, which will be added to the backups specified in config file.
+
+Lastly, the script support creation of cron jobs to run the script in predetermined times automatically.
+
+Usage:
+	rsyncshot [options] --input source_path --output dest_path --jobname name [--mode] H|D|W|M|C
+	rsyncshot [options] --backup source_path dest_path --jobname name [--mode] H|D|W|M|C
+	rsyncshot --config config_file
+
+A job can contain multiple source/destination combinations, but only one can be supplied via --input/--output directives. Please use --backup directives to specify multiples. The --input/--output may become deprecated in the future in favor of the --backup.
+Mode can be specified with or without the --mode directive. For future (and readability) it is recommended to explicitly specify the --mode.
+
+Modes:
+	H - hourly	- rotate hourly backups and update the latest hourly backup (hourly.0)
+	D - daily	- rotate daily backups and update the latest daily backup to the most recent hourly one (daily.0)
+	W - daily	- rotate weekly backups and update the latest weekly backup to the most recent daily one (weekly.0)
+	M - daily	- rotate monthly backups and update the latest monthly backup to the most recent weekly one (monthly.0)
+	C - define cron schedules and jobs for each - hourly, daily, weekly, monthly
+
+Options:
+	-h|--help		- show this help text
+	-M|--months #	- How many monthly backups to keep (e.g. -M 3 will keep 3 monthly backups) Default value 3.
+	-W|--weeks #	- How many weekly backups to keep (e.g. -W 4 will keep 4 weekly backups); Anything above 5 is not logical, as there it is handled with monthly backups, unless you have specific reason to keep more weekly copies. Default value 5.
+	-D|--days #		- How many daily backups to keep (e.g. -D 7 will keep 7 daily backups); Anythin above 7 should be covered by weekly backups, unless you have specifi reason to keep more of daily backups in rotation. Default value 7.
+	-H|--hours #	- How many hourly backups to keep (e.g. -H 8 will keep 8 hourly backups). This setting also determines the frequency, i.e. -H 8 will cause the hourly backup to be run every 3 hours (determined as freq=24/8). This is applicable if you use the Cron mode (see below) to setup cron jobs. There is no upper limit here, becaus higher number increases frequency. So although -H 48 may seem illogical (should be handled by daily), it actually means you will get hourly backup every 30 minutes. So you stay within 1 day and with 48 backups. Default value 24.
+	-n|--name		- name of the job. The name is also used to contruct folder names of backups in the destinantion folder (e.g. dest_name/job_name/hourly.0)
+	-b|--backup source_path dest_path
+					- will instruct rsync to create a snapshot of the source_path into the dest_path. There can be multiple --backup directivies per job.
+					- The source_path can be either: (1) a local path; (2) an rsyncd path determined by rsync://user@computer:volume/path or user@computer::volume/path; or (3) and ssh path determined by ssh://user@computer:/path.
+					- The dest_path can only be a local path, as there is no easy way to create rotating backups on remote ends using rsync or ssh protocol.
+	-i|--input source_path
+					- specify a source path for the job. Same variants apply as for --backup.
+					- There can be only one source_path specified via --input directive per job. If you want multiple inputs, then use the --backup directive instead.
+					- Used for backwards compatibility. This option may become deprecated in the future versions. It is strongly recommended to use the --backup directive instead.
+	-o|--output dest_path
+					- specify destination target for given input path. Same limits apply as in --backup.
+					- There can be only one dest_path specified via --output directive per job. If you want multiple output definitions, then use the --backup directive instead.
+					- Used for backwards compatibility. This option may become deprecated in the future versions. It is strongly recommended to use the --backup directive instead.
+		Input and Output complement each other. One cannot be used without specifying the other one.
+	--includes file	- specifies the "includes" file used by rsync. For details about includes file refer to rsync documentation.
+	--excludes file	- specifies the "excludes" file used by rsync. For details about excludes file refer to rsync documentation.
+	--relative		- use the "relative" option for rsync. This is useful if you are backing up multiple sources into the same destination.
+	-v|--verbose	- Use the verbose option of rsync. Not recommended if you plan to run your jobs from cron.
+	--rsyncpwd [file|password]	- password to use when connecting to rsync daemon. Two alternatives exist here:
+					(1) if you specify a path to a file and that file exists, then it is treated as the 'secrets' file, which contains the password;
+					(2) if specified parameter is not a file, then password is exported as RSYNC_PASSWORD environment variable. Please note, that on some systems this may be a security vulnerability, if the system shows exported variables system wide.
+	--config path_to_file - specifies a path to a file which contains configuration information. The file can contain same options as command line in format specified below. Please note, that the command line parameters (except for input/output/backup) override options specififed in the config file.
+		Config file format:
+					[JobName]
+					backup=/source/dir /dest/dir
+					backup=/another/source /another/dest
+					hourly=10
+					daily=5
+					relative
+		As you can see, parameters are specified without the "--" and if they require value, value is assigned using "=".
+		Using config file from command line to run a hourly backup can be as easy as: rsyncshot --config /home/user/my_config H
+		You may also use the config file to create cron jobs: rsyncshot --config /home/user/my_config C
+		However, in that case the parameters will be expanded for the cron job execution line. In other words, after you use config file to create a cron jobs, modifying the config file will not have an effect on the cron jobs. You will have to update the cron jobs by running the "C" mode again.
+
+Cron start times related parameters:
+(all these take as a parameter format required by cron (usually number). Wrong value will be rejected by cron.)
+	--moh			- Minute Of the Hour for when to run hourly jobs. --moh 0 means run at full hour. --moh 15 runs 15 minutes past the hour
+	--mod			- Minute of Daily -> minutes when to to run the daily backup job.
+	--hod			- Hour of daily backup -> at which hour to run daily backup. Example: --hod 4 --mod 10 runs daily backup at 4:10 am
+	--mow			- Minute of weekly backup -> same as above, but for weekly backup.
+	--how			- Hour of daily backup -> same as above, but for weekly backup.
+	--dow			- Day of weekly backup -> specify a day on which to run weekly backup.
+	--mom			- Minute of monthly -> same as above
+	--hom			- Hour of monthly -> same as above
+	--dom			- Day of month when to run monthly backups
+
+Examples:
+	Run hourly backup for source_dir to dest_dir using default values:
+	rsyncshot --backup source_dir dest_dir --name test_job --mode H
+
+	Run weekly backup using verbose mode for rsyncd source:
+	rsyncshot --backup rsync://username@userspc_or_ip.local.net:volume_name/directory /local_backup_destination --rsyncpwd /etc/rss.secrets --name test_job2 --mode W
+
+	Run a daily backup based on config file configuration, overriding --relative option and adding another source/dest combination:
+	rsyncshot --config /etc/job_name.config --relative --input /extra/source --output /extra/destinatnion --mode D
+	(note --name is not required as it is taken from config file)
+
+	Create cron jobs for hourly,daily,weekly (specified) and monthly (use default) runs based on provided parameters:
+	rsyncshot -H 12 -D 5 -W 2 --backup /home/user/important /safe/dest/folder --name my_important_job C
