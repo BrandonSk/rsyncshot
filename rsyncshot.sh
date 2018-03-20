@@ -5,9 +5,6 @@
 # r2 - added cron module, reduced # of backups by 1 because numbering starts from 0, removed extra echos
 
 initialize_variables() {
-	# REMOVE THE EXPORT!!!
-	export RSYNC_PASSWORD="25028696"
-
 	# Executables
 	ID=/usr/bin/id;
 	ECHO=/bin/echo;
